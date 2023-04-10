@@ -1,0 +1,130 @@
+version: "3"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: "./build/Dockerfile"
+    container_name: app
+    depends_on:
+      - mysql
+    ports:
+      - "90:90"
+    volumes:
+      - ./logs:/logs
+
+  mysql:
+    image: mysql:8.0.31
+    container_name: mysql
+    ports:
+      - "3309:3309"
+    command: ["mysqld", "--slow-query-log=1", "--slow-query-log-file=/var/log/mysql/slow.log"]
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+      - ./mysql:/var/log/mysql
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "true"
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin
+      MYSQL_DATABASE: test
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: pma
+    links:
+      - mysql
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_ARBITRARY: 1
+    ports:
+      - "8081:80"
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.12.1
+    container_name: elasticsearch
+    environment:
+      - "discovery.type=single-node"
+      - "cluster.name=ESCluster"
+      - "ES_JAVA_OPTS=-Xms768m -Xmx1024m"
+      - "xpack.security.enabled=false"
+      - "node.name=es_node1"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.15.2
+    container_name: logstash
+    user: "root"
+    ports:
+      - "5000:5000"
+      - "9600:9600"
+    volumes:
+      - ./build/pipeline:/usr/share/logstash/pipeline:ro,Z
+      - ./build/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro,Z
+      - ./mysql:/var/log/mysql:ro
+    depends_on:
+      - elasticsearch
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.12.1
+    container_name: kibana
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+
+  graylog:
+    image: graylog/graylog:5.0.6
+    container_name: graylog
+    environment:
+      GRAYLOG_NODE_ID_FILE: "/usr/share/graylog/data/config/node-id"
+      GRAYLOG_PASSWORD_SECRET: "somepasswordpepper"
+      GRAYLOG_ROOT_PASSWORD_SHA2: "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918"
+      GRAYLOG_HTTP_BIND_ADDRESS: "0.0.0.0:9000"
+      GRAYLOG_HTTP_EXTERNAL_URI: "http://localhost:9000/"
+      GRAYLOG_ELASTICSEARCH_HOSTS: "http://elasticsearch:9200"
+      GRAYLOG_MONGODB_URI: "mongodb://mongodb:27017/graylog"
+      # To make reporting (headless_shell) work inside a Docker container
+      GRAYLOG_REPORT_DISABLE_SANDBOX: "true"
+    ports:
+      - "5044:5044/tcp"   # Beats
+      - "5140:5140/tcp"   # Syslog TCP
+      - "5140:5140/udp"   # Syslog UDP
+      - "5555:5555/tcp"   # RAW TCP
+      - "5555:5555/udp"   # RAW TCP
+      - "9000:9000/tcp"   # Server API
+      - "12201:12201/tcp" # GELF TCP
+      - "12201:12201/udp" # GELF UDP
+      - "13301:13301/tcp" # Forwarder data
+      - "13302:13302/tcp" # Forwarder config
+    depends_on:
+      - elasticsearch
+      - mongodb
+    volumes:
+      - "graylog-data:/usr/share/graylog/data/data"
+      - "graylog-journal:/usr/share/graylog/data/journal"
+
+  mongodb:
+    image: mongo:5.0
+    container_name: mongodb
+    volumes:
+      - mongodb-data:/data/db
+
+volumes:
+  mysql-data:
+    driver: local
+  graylog-data:
+    driver: local
+  mongodb-data:
+    driver: local
+  mysql-log:
+    driver: local
+  elasticsearch-data:
+    driver: local
+  graylog-journal:
+    driver: local

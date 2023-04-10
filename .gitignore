@@ -1,0 +1,9 @@
+# Env file
+*.env
+server
+mysql
+mysql-data
+mysql-logstash
+logs
+graylog-config
+elasticsearch-data
